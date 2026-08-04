@@ -86,6 +86,7 @@ type kubeConfig struct {
 	limitCPU      *k8sresource.Quantity
 	limitMemory   *k8sresource.Quantity
 	labels        map[string]string
+	annotations   map[string]string
 	nodeSelector  map[string]string
 	tolerations   []corev1.Toleration
 
@@ -96,6 +97,7 @@ type kubeConfig struct {
 // used directly by the kubernetes executor.
 type kubeConfigFlags struct {
 	Labels        []string
+	Annotations   []string
 	RequestCPU    string
 	RequestMemory string
 	LimitCPU      string
@@ -112,6 +114,7 @@ func registerKubeFlags(flags *pflag.FlagSet, cfg *kubeConfig) {
 	flags.StringVar(&cfg.flags.LimitCPU, "kubernetes-limit-cpu", cfg.flags.LimitCPU, "CPU limit for kubernetes job.")
 	flags.StringVar(&cfg.flags.LimitMemory, "kubernetes-limit-memory", cfg.flags.LimitMemory, "Memory limit for kubernetes job.")
 	flags.StringSliceVar(&cfg.flags.Labels, "kubernetes-labels", cfg.flags.Labels, "Set additional labels on kubernetes jobs. Name and value are separated by an equals sign, e.g. `foo=bar`.")
+	flags.StringSliceVar(&cfg.flags.Annotations, "kubernetes-annotations", cfg.flags.Annotations, "Set additional annotations on the pods created for kubernetes jobs. Name and value are separated by an equals sign, e.g. `cluster-autoscaler.kubernetes.io/safe-to-evict=false`.")
 	flags.StringSliceVar(&cfg.flags.NodeSelector, "kubernetes-node-selector", cfg.flags.NodeSelector, "Constrain kubernetes jobs to nodes with these labels. Name and value are separated by an equals sign, e.g. `foo=bar`.")
 	flags.StringSliceVar(&cfg.flags.Tolerations, "kubernetes-tolerations", cfg.flags.Tolerations, "Add tolerations to kubernetes jobs, in the format `key[=value]:effect` (operator is `Exists` when no value is given, otherwise `Equal`), e.g. `dedicated=terraform:NoSchedule`. Omit the effect to tolerate all effects for the key.")
 }
@@ -208,6 +211,15 @@ func newKubeExecutor(
 		executor.Config.labels[k] = v
 	}
 
+	executor.Config.annotations = make(map[string]string)
+	for _, annotation := range kubeConfig.flags.Annotations {
+		k, v, ok := strings.Cut(annotation, "=")
+		if !ok {
+			return nil, fmt.Errorf("invalid annotation: must be in format name=value")
+		}
+		executor.Config.annotations[k] = v
+	}
+
 	executor.Config.nodeSelector = make(map[string]string)
 	for _, selector := range kubeConfig.flags.NodeSelector {
 		k, v, ok := strings.Cut(selector, "=")
@@ -257,6 +269,9 @@ func (s *kubeExecutor) SpawnOperation(ctx context.Context, _ *errgroup.Group, jo
 		"otf.ninja/organization":     job.Organization.String(),
 	}
 	maps.Copy(labels, s.Config.labels)
+
+	annotations := make(map[string]string, len(s.Config.annotations))
+	maps.Copy(annotations, s.Config.annotations)
 
 	const (
 		cacheVolumeName   = "cache"
@@ -308,7 +323,8 @@ func (s *kubeExecutor) SpawnOperation(ctx context.Context, _ *errgroup.Group, jo
 			TTLSecondsAfterFinished: new(int32(s.Config.TTLAfterFinish.Seconds())),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
+					Labels:      labels,
+					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: s.Config.ServiceAccount,

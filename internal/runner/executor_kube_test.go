@@ -75,6 +75,34 @@ func TestNewKubeExecutor(t *testing.T) {
 		assert.Error(t, err)
 	})
 
+	t.Run("with annotations", func(t *testing.T) {
+		cfg := defaultKubeConfig
+		cfg.flags.Annotations = []string{"cluster-autoscaler.kubernetes.io/safe-to-evict=false", "coo=boo"}
+
+		executor, err := newKubeExecutor(
+			logr.Discard(),
+			defaultOperationConfig(),
+			cfg,
+		)
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{
+			"cluster-autoscaler.kubernetes.io/safe-to-evict": "false",
+			"coo": "boo",
+		}, executor.Config.annotations)
+	})
+
+	t.Run("with invalid annotations", func(t *testing.T) {
+		cfg := defaultKubeConfig
+		cfg.flags.Annotations = []string{"foobar", "cooboo"}
+
+		_, err := newKubeExecutor(
+			logr.Discard(),
+			defaultOperationConfig(),
+			cfg,
+		)
+		assert.Error(t, err)
+	})
+
 	t.Run("with node selector", func(t *testing.T) {
 		cfg := defaultKubeConfig
 		cfg.flags.NodeSelector = []string{"foo=bar", "coo=boo"}
@@ -145,6 +173,7 @@ func TestNewKubeExecutor(t *testing.T) {
 func TestKubeExecutor_SpawnOperation(t *testing.T) {
 	cfg := defaultKubeConfig
 	cfg.flags.Labels = []string{"foo=bar"}
+	cfg.flags.Annotations = []string{"cluster-autoscaler.kubernetes.io/safe-to-evict=false"}
 	cfg.flags.LimitCPU = "3000m"
 	cfg.flags.LimitMemory = "512Mi"
 	cfg.flags.NodeSelector = []string{"dedicated=terraform"}
@@ -191,6 +220,13 @@ func TestKubeExecutor_SpawnOperation(t *testing.T) {
 	assert.Equal(t, wantLabels, jobsClient.job.Labels)
 	assert.Equal(t, wantLabels, secretsClient.secret.Labels)
 	assert.Equal(t, map[string]string{"jobToken": "token"}, secretsClient.secret.StringData)
+
+	// Annotations are set on the pods (via the pod template), not on the job
+	// or secret.
+	assert.Equal(t,
+		map[string]string{"cluster-autoscaler.kubernetes.io/safe-to-evict": "false"},
+		jobsClient.job.Spec.Template.Annotations,
+	)
 
 	podSpec := jobsClient.job.Spec.Template.Spec
 	assert.Equal(t, map[string]string{"dedicated": "terraform"}, podSpec.NodeSelector)
