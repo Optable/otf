@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	terraformName           = "terraform"
 	defaultTerraformVersion = "1.14.9"
 	hashicorpReleasesHost   = "releases.hashicorp.com"
 	latestEndpoint          = "https://api.releases.hashicorp.com/v1/releases/terraform/latest"
@@ -18,7 +19,7 @@ const (
 
 func Terraform() *Engine {
 	return &Engine{
-		Name:           "terraform",
+		Name:           terraformName,
 		DefaultVersion: defaultTerraformVersion,
 		client: &terraformClient{
 			endpoint: latestEndpoint,

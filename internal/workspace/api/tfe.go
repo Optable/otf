@@ -120,6 +120,9 @@ func (a *tfe) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		TriggerPatterns:            params.TriggerPatterns,
 		WorkingDirectory:           params.WorkingDirectory,
 	}
+	if params.TerraformVersion != nil {
+		opts.Engine = params.TerraformVersion.Engine
+	}
 	// convert from json:api structs to tag specs
 	opts.Tags = make([]workspace.TagSpec, len(params.Tags))
 	for i, tag := range params.Tags {
@@ -417,6 +420,9 @@ func (a *tfe) updateWorkspace(w http.ResponseWriter, r *http.Request, workspaceI
 		TriggerPrefixes:            params.TriggerPrefixes,
 		TriggerPatterns:            params.TriggerPatterns,
 		WorkingDirectory:           params.WorkingDirectory,
+	}
+	if params.TerraformVersion != nil {
+		opts.Engine = params.TerraformVersion.Engine
 	}
 
 	// If file-triggers-enabled is set to false and tags regex is unspecified

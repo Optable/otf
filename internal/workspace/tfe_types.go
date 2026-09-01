@@ -8,6 +8,7 @@ import (
 
 	"github.com/leg100/otf/internal/authz"
 	"github.com/leg100/otf/internal/configversion"
+	"github.com/leg100/otf/internal/engine"
 	"github.com/leg100/otf/internal/organization"
 	"github.com/leg100/otf/internal/resource"
 	"github.com/leg100/otf/internal/sshkey"
@@ -28,6 +29,7 @@ type TFEWorkspace struct {
 	CanQueueDestroyPlan        bool                           `jsonapi:"attribute" json:"can-queue-destroy-plan"`
 	CreatedAt                  time.Time                      `jsonapi:"attribute" json:"created-at"`
 	Description                string                         `jsonapi:"attribute" json:"description"`
+	Engine                     *engine.Engine                 `jsonapi:"attribute" json:"engine"`
 	Environment                string                         `jsonapi:"attribute" json:"environment"`
 	ExecutionMode              execution.Kind                 `jsonapi:"attribute" json:"execution-mode"`
 	FileTriggersEnabled        bool                           `jsonapi:"attribute" json:"file-triggers-enabled"`
@@ -473,6 +475,7 @@ func ToTFE(a *authz.Authorizer, from *Workspace, r *http.Request) (*TFEWorkspace
 		CanQueueDestroyPlan:  from.CanQueueDestroyPlan,
 		CreatedAt:            from.CreatedAt,
 		Description:          from.Description,
+		Engine:               from.Engine,
 		Environment:          from.Environment,
 		ExecutionMode:        from.Mode.Kind(),
 		GlobalRemoteState:    from.GlobalRemoteState,

@@ -12,11 +12,13 @@ import (
 	"github.com/leg100/otf/internal/authz"
 	"github.com/leg100/otf/internal/configversion"
 	"github.com/leg100/otf/internal/configversion/source"
+	"github.com/leg100/otf/internal/engine"
 	otfhttp "github.com/leg100/otf/internal/http"
 	"github.com/leg100/otf/internal/http/decode"
 	"github.com/leg100/otf/internal/resource"
 	"github.com/leg100/otf/internal/run"
 	"github.com/leg100/otf/internal/runstatus"
+	"github.com/leg100/otf/internal/semver"
 	"github.com/leg100/otf/internal/tfeapi"
 	"github.com/leg100/otf/internal/tfeapi/types"
 	"github.com/leg100/otf/internal/user"
@@ -118,6 +120,25 @@ func (a *tfe) createRun(w http.ResponseWriter, r *http.Request) {
 		Source:           source.API,
 		AllowEmptyApply:  params.AllowEmptyApply,
 		TerraformVersion: params.TerraformVersion,
+	}
+	if params.TerraformVersion != nil {
+		version, hinted, err := engine.ParseVersion(*params.TerraformVersion)
+		if err != nil {
+			tfeapi.Error(w, err)
+			return
+		}
+		if hinted != nil {
+			if !semver.IsValid(version) {
+				tfeapi.Error(w, engine.ErrInvalidVersion)
+				return
+			}
+			if semver.Compare(version, hinted.MinVersion()) < 0 {
+				tfeapi.Error(w, fmt.Errorf("%s requires version %s or later", hinted, hinted.MinVersion()))
+				return
+			}
+		}
+		opts.TerraformVersion = &version
+		opts.Engine = hinted
 	}
 	if params.ConfigurationVersion != nil {
 		opts.ConfigurationVersionID = &params.ConfigurationVersion.ID
