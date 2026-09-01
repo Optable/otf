@@ -183,6 +183,29 @@ func TestNewWorkspace(t *testing.T) {
 			},
 			wantError: execution.ErrNonAgentExecutionModeWithPool,
 		},
+		{
+			name: "tofu engine",
+			opts: CreateOptions{
+				Name:          new("my-workspace"),
+				Organization:  &org1.Name,
+				Engine:        engine.Tofu(),
+				EngineVersion: mustVersion(t, "1.6.0"),
+			},
+			test: func(t *testing.T, got *Workspace) {
+				assert.Equal(t, engine.Tofu(), got.Engine)
+				assert.Equal(t, "1.6.0", got.EngineVersion.String())
+			},
+		},
+		{
+			name: "tofu engine pinned to a version it never published",
+			opts: CreateOptions{
+				Name:          new("my-workspace"),
+				Organization:  &org1.Name,
+				Engine:        engine.Tofu(),
+				EngineVersion: mustVersion(t, "1.5.7"),
+			},
+			wantError: ErrUnsupportedTerraformVersion,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,6 +236,24 @@ func TestWorkspace_UpdateError(t *testing.T) {
 				Name: new("%*&^"),
 			},
 			want: internal.ErrInvalidName,
+		},
+		{
+			name: "switching to tofu without raising the pinned version",
+			ws: &Workspace{
+				Name: "dev", Organization: org1, Mode: execution.RemoteMode(),
+				Engine: engine.Terraform(), EngineVersion: mustVersion(t, "1.5.7"),
+			},
+			opts: UpdateOptions{Engine: engine.Tofu()},
+			want: ErrUnsupportedTerraformVersion,
+		},
+		{
+			name: "switching to tofu and raising the pinned version",
+			ws: &Workspace{
+				Name: "dev", Organization: org1, Mode: execution.RemoteMode(),
+				Engine: engine.Terraform(), EngineVersion: mustVersion(t, "1.5.7"),
+			},
+			opts: UpdateOptions{Engine: engine.Tofu(), EngineVersion: mustVersion(t, "1.6.0")},
+			want: nil,
 		},
 		{
 			name: "specifying both tags regex and trigger patterns",

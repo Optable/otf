@@ -10,11 +10,11 @@ import (
 )
 
 // MinEngineVersion specifies the minimum engine version accepted by OTF.
-//
-// TODO: This originally applied only to terraform before tofu was added as an
-// alternative engine. Tofu's earliest version is 1.6.0, which should really be
-// the minimum version if tofu is the selected engine.
 const MinEngineVersion = "1.2.0"
+
+// MinTofuVersion specifies the minimum version accepted for the tofu engine:
+// tofu forked from terraform at 1.6.0 and no earlier release exists.
+const MinTofuVersion = "1.6.0"
 
 var (
 	// Default is the default for setting the default engine.
@@ -25,6 +25,8 @@ var (
 	// ErrInvalidVersion is returned when a engine version string is
 	// not a semantic version string (major.minor.patch).
 	ErrInvalidVersion = errors.New("invalid engine version")
+	// ErrUnknownEngine is returned when a string does not name a known engine.
+	ErrUnknownEngine = errors.New("no engine found with that name: must be either 'terraform' or 'tofu'")
 )
 
 func Engines() []*Engine {
@@ -32,6 +34,15 @@ func Engines() []*Engine {
 		Terraform(),
 		Tofu(),
 	}
+}
+
+// Lookup returns the engine with the given name.
+func Lookup(name string) (*Engine, error) {
+	var e Engine
+	if err := e.set(name); err != nil {
+		return nil, err
+	}
+	return &e, nil
 }
 
 // Engine represents a CLI capable of carrying out infrastructure as code
@@ -52,6 +63,14 @@ type Client interface {
 }
 
 func (e *Engine) String() string { return e.Name }
+
+// MinVersion is the earliest version of this engine accepted by OTF.
+func (e *Engine) MinVersion() string {
+	if e.Name == tofuName {
+		return MinTofuVersion
+	}
+	return MinEngineVersion
+}
 
 func (e *Engine) Type() string { return "engine" }
 
@@ -87,12 +106,12 @@ func (e *Engine) Value() (driver.Value, error) {
 
 func (e *Engine) set(v string) error {
 	switch v {
-	case "terraform":
+	case terraformName:
 		*e = *Terraform()
-	case "tofu":
+	case tofuName:
 		*e = *Tofu()
 	default:
-		return fmt.Errorf("no engine found named %s: must be either 'terraform' or 'tofu'", v)
+		return fmt.Errorf("%w: %s", ErrUnknownEngine, v)
 	}
 	return nil
 }
