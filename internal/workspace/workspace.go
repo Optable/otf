@@ -286,6 +286,9 @@ func (f *factory) NewWorkspace(ctx context.Context, opts CreateOptions) (*Worksp
 		// TODO: use constructor
 		ws.EngineVersion = &Version{semver: latest}
 	}
+	if err := ws.checkEngineVersion(); err != nil {
+		return nil, err
+	}
 	if opts.WorkingDirectory != nil {
 		ws.WorkingDirectory = *opts.WorkingDirectory
 	}
@@ -462,6 +465,11 @@ func (ws *Workspace) Update(opts UpdateOptions) (*bool, error) {
 		ws.EngineVersion = opts.EngineVersion
 		updated = true
 	}
+	if opts.Engine != nil || opts.EngineVersion != nil {
+		if err := ws.checkEngineVersion(); err != nil {
+			return nil, err
+		}
+	}
 	if opts.WorkingDirectory != nil {
 		ws.WorkingDirectory = *opts.WorkingDirectory
 		updated = true
@@ -575,6 +583,15 @@ func (ws *Workspace) addConnection(opts *ConnectOptions) error {
 		ws.Connection.Branch = *opts.Branch
 	}
 	return nil
+}
+
+// checkEngineVersion rejects a pinned version the workspace's engine never
+// published, e.g. tofu has no 1.5.7.
+func (ws *Workspace) checkEngineVersion() error {
+	if ws.EngineVersion == nil || ws.EngineVersion.Latest {
+		return nil
+	}
+	return checkVersion(ws.Engine, ws.EngineVersion.String())
 }
 
 func (ws *Workspace) setName(name string) error {

@@ -118,7 +118,9 @@ type (
 		AutoApply              *bool
 		Source                 source.Source
 		TerraformVersion       *string
-		AllowEmptyApply        *bool
+		// Engine overrides the workspace's engine for this run.
+		Engine          *engine.Engine
+		AllowEmptyApply *bool
 		// PlanOnly specifies if this is a speculative, plan-only run that
 		// Terraform cannot apply. Takes precedence over whether the
 		// configuration version is marked as speculative or not.
@@ -222,6 +224,9 @@ func NewRun(
 	}
 	if opts.TerraformVersion != nil {
 		run.EngineVersion = *opts.TerraformVersion
+	}
+	if opts.Engine != nil {
+		run.Engine = opts.Engine
 	}
 	if opts.AllowEmptyApply != nil {
 		run.AllowEmptyApply = *opts.AllowEmptyApply

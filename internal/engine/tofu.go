@@ -11,12 +11,15 @@ import (
 	"github.com/google/go-github/v65/github"
 )
 
-const defaultTofuVersion = "1.11.6"
+const (
+	tofuName           = "tofu"
+	defaultTofuVersion = "1.11.6"
+)
 
 // Tofu is the opentofu engine.
 func Tofu() *Engine {
 	return &Engine{
-		Name:           "tofu",
+		Name:           tofuName,
 		DefaultVersion: defaultTofuVersion,
 		client:         &tofuClient{},
 	}
