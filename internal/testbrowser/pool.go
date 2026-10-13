@@ -20,6 +20,7 @@ import (
 
 const (
 	headlessEnvVar = "OTF_E2E_HEADLESS"
+	traceEnvVar    = "OTF_E2E_TRACE"
 	tracesDir      = "traces"
 )
 
@@ -35,6 +36,8 @@ type Pool struct {
 	tokens *tokens.Service
 	// keep a record of tests using this pool
 	tests map[*testing.T]int
+	// record a playwright trace of each browser context
+	trace bool
 }
 
 func NewPool(secret []byte) (*Pool, func(), error) {
@@ -51,6 +54,16 @@ func NewPool(secret []byte) (*Pool, func(), error) {
 		headless, err = strconv.ParseBool(v)
 		if err != nil {
 			return nil, nil, fmt.Errorf("parsing %s: %w", headlessEnvVar, err)
+		}
+	}
+
+	// Tracing is opt-in: recording screenshots and snapshots slows down tests.
+	var trace bool
+	if v, ok := os.LookupEnv(traceEnvVar); ok {
+		var err error
+		trace, err = strconv.ParseBool(v)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing %s: %w", traceEnvVar, err)
 		}
 	}
 
@@ -73,6 +86,7 @@ func NewPool(secret []byte) (*Pool, func(), error) {
 		tokens:  tokensService,
 		browser: browser,
 		tests:   make(map[*testing.T]int),
+		trace:   trace,
 	}
 	for range poolSize {
 		p.pool <- nil
@@ -113,17 +127,19 @@ func (p *Pool) New(t *testing.T, user context.Context, fn func(playwright.Page))
 	defer browserCtx.Close()
 
 	// Setup tracing for debugging purposes.
-	browserCtx.Tracing().Start(playwright.TracingStartOptions{
-		Screenshots: new(true),
-		Snapshots:   new(true),
-	})
-	defer func() {
-		// Save trace to a unique path for each call of this func
-		dir := fmt.Sprintf("%s_%d", t.Name(), p.tests[t])
-		p.tests[t]++
-		path := filepath.Join(tracesDir, dir, "trace.zip")
-		browserCtx.Tracing().Stop(path)
-	}()
+	if p.trace {
+		browserCtx.Tracing().Start(playwright.TracingStartOptions{
+			Screenshots: new(true),
+			Snapshots:   new(true),
+		})
+		defer func() {
+			// Save trace to a unique path for each call of this func
+			dir := fmt.Sprintf("%s_%d", t.Name(), p.tests[t])
+			p.tests[t]++
+			path := filepath.Join(tracesDir, dir, "trace.zip")
+			browserCtx.Tracing().Stop(path)
+		}()
+	}
 
 	err = browserCtx.GrantPermissions([]string{
 		"clipboard-read",

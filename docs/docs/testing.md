@@ -43,6 +43,16 @@ export OTF_E2E_HEADLESS=false
 <figcaption>Integration tests with headless mode disabled</figcaption>
 </figure>
 
+#### Record browser traces
+
+Browser-based tests can record a [playwright trace](https://playwright.dev/docs/trace-viewer) of each browser session, with screenshots and DOM snapshots. Tracing is off by default because it slows down the tests. To turn it on:
+
+```
+export OTF_E2E_TRACE=true
+```
+
+Each trace is written to `internal/integration/traces/<test>_<n>/trace.zip`.
+
 #### More verbose logging
 
 By default, the integration tests don't print the logs from the OTF daemons they spawn. To enable logging with a verbosity of 1, set the following environment variable:
