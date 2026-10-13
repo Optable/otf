@@ -122,17 +122,24 @@ echo "downloaded go-tfe module to $dest_dir"
 # some tests generate a tarball and save locally and need write perms
 chmod -R +w $dest_dir
 
+compose_file=$PWD/docker-compose.testing.yml
+
 cd $dest_dir
+
+# capture failures rather than exit on them (set -e), so that otfd logs can be
+# printed below
+status=0
 
 # run beta tests unless user specifies tests (there is currently no way in this
 # script to specify individual *beta* tests to run)
 if [[ "$#" -eq 0 ]]; then
-    ENABLE_BETA=1 go test -v -run $allBetaTests -timeout 600s
+    ENABLE_BETA=1 go test -run $allBetaTests -timeout 600s || status=$?
 fi
 # run tests
-go test -v -run ${@:-$all} -timeout 600s -skip $skipTests
+go test -run ${@:-$all} -timeout 600s -skip $skipTests || status=$?
 
 # if tests fail then spit out otfd logs
-if [[ $? -ne 0 ]]; then
-	docker compose logs otfd
+if [[ $status -ne 0 ]]; then
+	docker compose -f $compose_file logs otfd
 fi
+exit $status
