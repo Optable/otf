@@ -13,10 +13,8 @@ permissions:
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: true
-# Go caches (modules + build) are per job, since each job builds different
-# packages. They are restored on every run but saved only on master pushes:
-# PRs read master's caches, and PR branches don't fill the repo cache quota.
-# The run ID in the key saves a fresh build cache on each master push.
+# Caches are restored on every run and saved on master pushes only. The run ID
+# in the Go cache keys makes each master push save a fresh build cache.
 jobs:
   lint:
     runs-on: ubuntu-26.04
@@ -60,7 +58,6 @@ jobs:
             ~/.cache/staticcheck
           key: go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
   test:
-    # You must use a Linux environment when using service containers or container jobs
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
@@ -84,16 +81,23 @@ jobs:
             go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-
             go-test-${{ runner.os }}-
       # The playwright version is pinned in go.mod.
-      - name: Cache playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('go.sum') }}
       - name: Install e2e dependencies
         run: make install-playwright-ubuntu
-      - name: Cache provider mirror
+      - name: Save playwright browsers
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - name: Restore provider mirror
         id: mirror-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: mirror/registry.*
           key: mirror-${{ hashFiles('mirror/providers.tf') }}
@@ -108,6 +112,12 @@ jobs:
       - name: Setup provider mirror for integration tests
         if: steps.mirror-cache.outputs.cache-hit != 'true'
         run: ./hack/setup_mirror.sh
+      - name: Save provider mirror
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.mirror-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mirror/registry.*
+          key: mirror-${{ hashFiles('mirror/providers.tf') }}
       - name: Create kind cluster for integration tests
         uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:
