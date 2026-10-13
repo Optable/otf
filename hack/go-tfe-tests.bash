@@ -130,13 +130,16 @@ cd $dest_dir
 # printed below
 status=0
 
+# the explicit package (.) selects package list mode, which prints only an
+# `ok <pkg>` line on success, like `go test ./...` in the test job
+
 # run beta tests unless user specifies tests (there is currently no way in this
 # script to specify individual *beta* tests to run)
 if [[ "$#" -eq 0 ]]; then
-    ENABLE_BETA=1 go test -run $allBetaTests -timeout 600s || status=$?
+    ENABLE_BETA=1 go test . -run $allBetaTests -timeout 600s || status=$?
 fi
 # run tests
-go test -run ${@:-$all} -timeout 600s -skip $skipTests || status=$?
+go test . -run ${@:-$all} -timeout 600s -skip $skipTests || status=$?
 
 # if tests fail then spit out otfd logs
 if [[ $status -ne 0 ]]; then
