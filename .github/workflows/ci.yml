@@ -1,0 +1,91 @@
+name: ci
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+      - name: Check no diff
+        run: make check-no-diff
+      - name: Lint check
+        run: |
+          make lint
+          make helm-lint
+      - name: Vet check
+        run: make vet
+  test:
+    # You must use a Linux environment when using service containers or container jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+      - name: Install e2e dependencies
+        run: make install-playwright-ubuntu
+      - name: Install tofu for provider mirror setup
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
+      - name: Install terraform for provider mirror setup
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - name: Setup provider mirror for integration tests
+        run: ./hack/setup_mirror.sh
+      - name: Create kind cluster for integration tests
+        uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # v1.13.0
+        with:
+          cluster_name: kind
+      - name: Tests
+        env:
+          OTF_TEST_KUBE: true
+        run: make test
+      - name: Archive browser traces
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-browser-traces
+          path: internal/integration/traces
+  api-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+      - name: Add hosts to /etc/hosts
+        run: |
+          # otfd is configured with hostname otf.local
+          echo "127.0.0.1 otf.local" | sudo tee -a /etc/hosts
+      - name: API tests
+        # VCS tests are skipped: they need a github oauth token to create a
+        # webhook on a real github repo.
+        run: make go-tfe-tests
