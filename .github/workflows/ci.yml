@@ -8,9 +8,11 @@ on:
       - master
 permissions:
   contents: read
+# A new push to a PR cancels the PR's running CI. Master pushes get a group
+# per commit, so each one runs to the end and saves caches.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
 # Go caches (modules + build) are per job, since each job builds different
 # packages. They are restored on every run but saved only on master pushes:
 # PRs read master's caches, and PR branches don't fill the repo cache quota.
