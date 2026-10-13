@@ -1,0 +1,176 @@
+name: Continuous Integration
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+permissions:
+  contents: read
+# A new push to a PR cancels the PR's running CI. Master pushes get a group
+# per commit, so each one runs to the end and saves caches.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+# Caches are restored on every run and saved on master pushes only. The run ID
+# in the Go cache keys makes each master push save a fresh build cache.
+jobs:
+  lint:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+          cache: false
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+          key: go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-lint-${{ runner.os }}-
+      - name: Check no diff
+        run: make check-no-diff
+      - name: Lint check
+        run: |
+          make lint
+          make helm-lint
+      - name: Vet check
+        run: make vet
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/staticcheck
+          key: go-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+  test:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+          cache: false
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-test-${{ runner.os }}-
+      # The playwright version is pinned in go.mod.
+      - name: Restore playwright browsers
+        id: playwright-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - name: Install e2e dependencies
+        run: make install-playwright-ubuntu
+      - name: Save playwright browsers
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.playwright-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - name: Restore provider mirror
+        id: mirror-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mirror/registry.*
+          key: mirror-${{ hashFiles('mirror/providers.tf') }}
+      - name: Install tofu for provider mirror setup
+        if: steps.mirror-cache.outputs.cache-hit != 'true'
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+      - name: Install terraform for provider mirror setup
+        if: steps.mirror-cache.outputs.cache-hit != 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_wrapper: false
+      - name: Setup provider mirror for integration tests
+        if: steps.mirror-cache.outputs.cache-hit != 'true'
+        run: ./hack/setup_mirror.sh
+      - name: Save provider mirror
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.mirror-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: mirror/registry.*
+          key: mirror-${{ hashFiles('mirror/providers.tf') }}
+      - name: Create kind cluster for integration tests
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: kind
+      - name: Tests
+        env:
+          OTF_TEST_KUBE: true
+        run: make test
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-test-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+  api-tests:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: "go.mod"
+          cache: false
+      # Also holds the go-tfe module that the API tests download.
+      - name: Restore Go cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-api-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-api-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-api-${{ runner.os }}-
+      - name: Add hosts to /etc/hosts
+        run: |
+          # otfd is configured with hostname otf.local
+          echo "127.0.0.1 otf.local" | sudo tee -a /etc/hosts
+      - name: API tests
+        # VCS tests are skipped: they need a github oauth token to create a
+        # webhook on a real github repo.
+        run: make go-tfe-tests
+      - name: Save Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-api-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
