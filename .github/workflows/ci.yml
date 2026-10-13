@@ -47,8 +47,16 @@ jobs:
           go-version-file: "go.mod"
       - name: Install e2e dependencies
         run: make install-playwright-ubuntu
+      # tofu and kind are installed from release binaries: their setup actions
+      # are not on the org's allowed actions list.
       - name: Install tofu for provider mirror setup
-        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1.0.8
+        env:
+          TOFU_VERSION: 1.13.1
+          TOFU_SHA256: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
+        run: |
+          curl -fsSLo /tmp/tofu.zip "https://github.com/opentofu/opentofu/releases/download/v${TOFU_VERSION}/tofu_${TOFU_VERSION}_linux_amd64.zip"
+          echo "${TOFU_SHA256}  /tmp/tofu.zip" | sha256sum -c -
+          sudo unzip -o /tmp/tofu.zip tofu -d /usr/local/bin
       - name: Install terraform for provider mirror setup
         uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
         with:
@@ -56,9 +64,14 @@ jobs:
       - name: Setup provider mirror for integration tests
         run: ./hack/setup_mirror.sh
       - name: Create kind cluster for integration tests
-        uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # v1.13.0
-        with:
-          cluster_name: kind
+        env:
+          KIND_VERSION: 0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+        run: |
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/v${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum -c -
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          kind create cluster --name kind --wait 5m
       - name: Tests
         env:
           OTF_TEST_KUBE: true
